@@ -4,10 +4,40 @@
 #define LEFT_BK 1 // PTB1 TPM1_CH1
 #define RIGHT_FW 2 // PTB2 TPM2_CH0
 #define RIGHT_BK 3 // PTB3 TPM2_CH1
+#define UART_RX_PORTE23 23 //PTE 23 Rx
+#define BAUD_RATE 9600
+#define UART2_INT_PRIO 128	
+#define FW_MOTOR 3
+#define RV_MOTOR 5
+#define RT_MOTOR 9
+#define LT_MOTOR 7
+#define STOP_MOTOR 11
+#define MASK(x) (1 << (x))
+#define FW_MASK(x) (x&0x03)
+#define RV_MASK(x) (x&0x05)
+#define STOP_MASK(x) (x&0x0B)
+#define RT_MASK(x) (x&0x09)
+#define LT_MASK(x) (x&0x07)
+
+volatile int speed = 3;
+volatile uint8_t rx_data = 0x01;
+
+void UART2_IRQHandler(void) {
+	
+	NVIC_ClearPendingIRQ(UART2_IRQn);
+	
+	if (UART2->S1 & UART_S1_RDRF_MASK) {
+	// received a character
+		rx_data = UART2->D;
+	} 
+	
+  PORTE->ISFR = 0xffffffff;
+	
+}
 
 void initPWM() {
 	// Enable Clock Gating for PORTB
-	SIM->SCGC5 = (SIM_SCGC5_PORTB_MASK);
+	SIM->SCGC5 |= (SIM_SCGC5_PORTB_MASK);
 
 	// Configure Mode 3 for PWM pin operation
 	PORTB->PCR[LEFT_FW] &= ~PORT_PCR_MUX_MASK;
@@ -58,102 +88,34 @@ void initPWM() {
 	TPM2_C1SC |= (TPM_CnSC_ELSB(1) | TPM_CnSC_MSB(1));
 }
 
+/*	Init UART2	*/
+void initUART2(uint32_t baud_rate){
+	
+	uint32_t divisor, bus_clock;
+	
+	SIM->SCGC4 |= SIM_SCGC4_UART2_MASK;
+	SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+	
+	PORTE-> PCR[UART_RX_PORTE23] &= ~PORT_PCR_MUX_MASK;
+	PORTE-> PCR[UART_RX_PORTE23] |= PORT_PCR_MUX(4);
+	
+	UART2->C2 &= ~((UART_C2_TE_MASK) | (UART_C2_RE_MASK));
+	
+	bus_clock = DEFAULT_SYSTEM_CLOCK/2;
+	divisor = bus_clock / (baud_rate*16);
+	UART2->BDH = UART_BDH_SBR(divisor >> 8);
+	UART2->BDL = UART_BDL_SBR(divisor);
+	
+	UART2->C1 = 0;
+	UART2->S2 = 0;
+	UART2->C3 = 0;
+	
+	UART2->C2 |= (UART_C2_RE_MASK);
+	NVIC_SetPriority(UART2_IRQn, 128);
+	NVIC_ClearPendingIRQ(UART2_IRQn);
+	NVIC_EnableIRQ(UART2_IRQn);
+	UART2->C2 |= UART_C2_RIE_MASK;
 
-// stop all PWM value
-void stop() {	
-		TPM1_C0V = 0;
-		TPM1_C1V = 0;
-		TPM2_C0V = 0;
-		TPM2_C1V = 0;
-}
-
-/* Motor Base Functions */
-void setLeftSpeed(int percentage) {
-		if (left_dir == 0) {
-				TPM2_C0V = (int) (((percentage * LEFT_MOTOR_COMP) / 10000.0) * 7499.0);
-				TPM2_C1V = 0;
-		} else {
-				TPM2_C0V = 0;
-				TPM2_C1V = (int) (((percentage * LEFT_MOTOR_COMP) / 10000.0) * 7499.0);
-		}
-}
-
-void setRightSpeed(int percentage) {
-		if (right_dir == 0) {
-				TPM1_C0V = (int) (((percentage * RIGHT_MOTOR_COMP)/ 10000.0) * 7499.0);
-				TPM1_C1V = 0;
-		} else {
-				TPM1_C0V = 0;
-				TPM1_C1V = (int) (((percentage * RIGHT_MOTOR_COMP) / 10000.0) * 7499.0);
-		}
-}
-
-void switchDir(void) {
-		left_dir = (left_dir == 0 ? 1 : 0);
-		right_dir = (right_dir == 0 ? 1 : 0);
-}
-
-
-
-/* Advanced Motor Functions */
-// basic forward / backward
-void forward(int percentage) {
-		left_dir = 0; // set forward direction
-		right_dir = 0; 
-		setLeftSpeed(percentage);
-		setRightSpeed(percentage);
-}
-
-void reverse(int percentage) {
-		left_dir = 1; // set backward direction
-		right_dir = 1; 
-		setLeftSpeed(percentage);
-		setRightSpeed(percentage);
-}
-
-// keep both wheels spinning, the other at 25% power
-void turnLeft(int percentage) {
-		left_dir = 0;
-		right_dir = 0; 
-		setLeftSpeed(percentage / 4);
-		setRightSpeed(percentage - 40);
-}
-
-void turnRight(int percentage) {
-		left_dir = 0;
-		right_dir = 0; 
-		setLeftSpeed(percentage - 40);
-		setRightSpeed(percentage / 4);
-}
-
-// keep the other wheel stationary
-void swingLeft(int percentage) {
-		left_dir = 0;
-		right_dir = 0; 
-		setLeftSpeed(0);
-		setRightSpeed(percentage);
-}
-
-void swingRight(int percentage) {
-		left_dir = 0;
-		right_dir = 0; 
-		setLeftSpeed(percentage);
-		setRightSpeed(0);
-}
-
-// pivot on the spot, both wheels in opposite directions
-void pivotLeft(int percentage) {
-		left_dir = 1;
-		right_dir = 0; 
-		setLeftSpeed(percentage);
-		setRightSpeed(percentage);
-}
-
-void pivotRight(int percentage) {
-		left_dir = 0;
-		right_dir = 1; 
-		setLeftSpeed(percentage);
-		setRightSpeed(percentage);	
 }
 
 /* Delay Function */
@@ -165,29 +127,76 @@ static void delay(volatile uint32_t nof) {
   }
 }
 
+static void delay100x(volatile uint32_t nof) {
+ for(int i =0;i<100;i++) {
+  delay(nof);
+ }
+}
+
+/** Stop the motors**/
+void stopMotors(){
+	TPM1->MOD = 0;
+	TPM1_C0V = 0; // stop left fw
+	TPM1_C1V = 0; // stop left bk
+	
+	TPM2->MOD = 0;
+	TPM2_C0V = 0; // stop right fw
+	TPM2_C1V = 0; // stop right bk
+}
+
+/** Move Forward **/
+void forward() {
+  TPM1->MOD = 7500;
+	TPM1_C0V = MAX_DUTY_CYCLE/speed;
+ 
+	TPM2->MOD = 7500;
+	TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9);
+
+}
+
+/** Move Reverse **/
+void reverse() {
+	 TPM1->MOD = 7500;
+	 TPM1_C1V = MAX_DUTY_CYCLE/speed;
+	 TPM2->MOD = 7500;
+	 TPM2_C1V = MAX_DUTY_CYCLE/(speed*0.9);
+}
+
+void turnLeft() {
+	TPM1->MOD = 7500;
+	 TPM1_C0V = MAX_DUTY_CYCLE/speed;
+	 TPM2->MOD = 7500;
+	 TPM2_C1V = MAX_DUTY_CYCLE/(speed*0.9);
+}
+
+void turnRight() {
+	TPM1->MOD = 7500;
+	 TPM1_C1V = MAX_DUTY_CYCLE/speed;
+	 TPM2->MOD = 7500;
+	 TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9);
+}
 
 int main(void) {
 
  SystemCoreClockUpdate();
+ initUART2(BAUD_RATE);
  initPWM();
 	
  //TPM1_C0V = 0x0ea6; //50% duty cycle -> 7500/2 = 3750 in hex:0x0ea6
  //TPM1_C1V = 0x0753; //25% duty cycle -> 7500/4 = 1875 in hex:0x0753
  
  while(1) { // Forward, stop, backward, stop
-   TPM1->MOD = 7500;
-	 TPM1_C0V = MAX_DUTY_CYCLE/2; // 50% duty cycle
-	 TPM2->MOD = 7500;
-	 TPM2_C0V = MAX_DUTY_CYCLE/2; // 50% duty cycle
-	 delay(0x80000);
-	 stopMotors();
-	 delay(0x80000);
-	 TPM1->MOD = 7500;
-	 TPM1_C1V = MAX_DUTY_CYCLE/2; // 50% duty cycle
-	 TPM2->MOD = 7500;
-	 TPM2_C1V = MAX_DUTY_CYCLE/2; // 50% duty cycle
-	 delay(0x80000);
-	 stopMotors();
-	 delay(0x80000);
+	//	if(FW_MASK(rx_data)==FW_MOTOR){
+	//		forward();
+	//	}else if(RV_MASK(rx_data)==RV_MOTOR){
+	//		reverse();
+	//	}else if(STOP_MASK(rx_data)==STOP_MOTOR){
+			//stopMotors();
+	 forward();
+    reverse();
+	 turnLeft();
+	turnRight();.
+  stopMotors();
+	
 	}
 }
