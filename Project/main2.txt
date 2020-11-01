@@ -416,9 +416,9 @@ void motor_thread (void *argument) {
 			turnLeft();
 		}else if(myRxData == STOP_MASK){ //0x0B
 			stopMotors();	
-		}else if(myRxData == SL_MASK) //0x08 {
+		}else if(myRxData == SL_MASK) { //0x08 
 			swingLeft();
-		} else if (myRxData == SR_MASK) //0x0A {
+		} else if (myRxData == SR_MASK) { //0x0A 
 			swingRight();
 		} 
 	}
