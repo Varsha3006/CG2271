@@ -53,6 +53,9 @@ typedef enum states
   led_on,
 }my_state_t;
 
+osMutexId_t myMutex;
+volatile int movingStatus =0;
+
 osMessageQueueId_t  motorQ;
 osMessageQueueId_t controlQ;
 osMessageQueueId_t ledQ;
@@ -217,6 +220,29 @@ void tStationeryGreenLed(void *argument) {
 	}
 }
 
+void greenled (void *argument) {
+	for (;;) {
+		if (movingStatus == 1) {
+		for (int i = 0;i<8;i++) {
+			osMutexAcquire(myMutex,osWaitForever);
+			turnOffGreen();
+			PTC->PDOR = MASK(green_led_segment[i]);
+			osMutexRelease(myMutex);
+			osDelay(500);
+			i = i%8;
+		}
+	}
+	  else {
+			osMutexAcquire(myMutex,osWaitForever);
+			turnOnGreen();
+			osMutexRelease(myMutex);
+		  osDelay(500);
+		}
+	}
+}
+
+
+
 void tRunningRedLed(void *argument) {
 	for (;;) {
 		turnOnRed();
@@ -226,12 +252,38 @@ void tRunningRedLed(void *argument) {
 	}
 }
 
+
 void tStationeryRedLed(void *argument) {
 	for (;;) {
 		turnOnRed();
 		osDelay(250);
 		turnOffRed();
 		osDelay(250);
+	}
+}
+
+void redled (void *argument) {
+	for (;;) {
+		if (movingStatus ==1) {
+			osMutexAcquire(myMutex,osWaitForever);
+			turnOnRed();
+			osMutexRelease(myMutex);
+		osDelay(500);
+			osMutexAcquire(myMutex,osWaitForever);
+		turnOffRed();
+			osMutexRelease(myMutex);
+		osDelay(500);
+		}
+		else {
+			osMutexAcquire(myMutex,osWaitForever);
+			turnOnRed();
+			osMutexRelease(myMutex);
+		osDelay(250);
+			osMutexAcquire(myMutex,osWaitForever);
+		turnOffRed();
+			osMutexRelease(myMutex);
+		osDelay(250);
+		}
 	}
 }
 
@@ -276,42 +328,51 @@ void stopMotors(){
 
 /** Move Forward **/
 void forward() {
+	osMutexAcquire(myMutex,osWaitForever);
   TPM1->MOD = 7500;
 	TPM1_C0V = MAX_DUTY_CYCLE/speed;
  
 	TPM2->MOD = 7500;
 	TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9);
+	movingStatus = 1;
+	osMutexRelease(myMutex);
  // tRunningGreenLed();
 	//tRunningRedLed();
 }
 
 /** Move Reverse **/
 void reverse() {
+	osMutexAcquire(myMutex,osWaitForever);
 	 TPM1->MOD = 7500;
 	 TPM1_C1V = MAX_DUTY_CYCLE/speed;
 	 TPM2->MOD = 7500;
 	 TPM2_C1V = MAX_DUTY_CYCLE/(speed*0.9);
+	movingStatus = 1;
+	osMutexRelease(myMutex);
 	//tRunningGreenLed();
 	//tRunningRedLed();
 }
 
 void turnLeft() {
+	osMutexAcquire(myMutex,osWaitForever);
 	TPM1->MOD = 7500;
 	 TPM1_C0V = MAX_DUTY_CYCLE/speed;
 	 TPM2->MOD = 7500;
 	 TPM2_C1V = MAX_DUTY_CYCLE/(speed*0.9);
+	movingStatus = 1;
+	osMutexRelease(myMutex);
 	//tRunningGreenLed();
 	//tRunningRedLed();
 }
 
 void turnRight() {
-	uint8_t myRxData;
-	osMessageQueueGet(motorQ, &myRxData, NULL, osWaitForever);
+	osMutexAcquire(myMutex,osWaitForever);
 	TPM1->MOD = 7500;
 	 TPM1_C1V = MAX_DUTY_CYCLE/speed;
 	 TPM2->MOD = 7500;
 	 TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9);
-	
+	movingStatus = 1;
+	osMutexRelease(myMutex);
 }
 
 
@@ -343,26 +404,36 @@ void control_thread(void *argument) {
 		osDelay(1000);
 	}
 }
+
+const osThreadAttr_t thread_attr1 = {
+	.priority = osPriorityHigh
+};
+
+const osThreadAttr_t thread_attr2 = {
+	.priority = osPriorityHigh - 1
+};
+
  
 int main(void) {
 
  SystemCoreClockUpdate();
  initUART2(BAUD_RATE);
  initPWM();
-
 	osKernelInitialize(); 
-	osThreadNew(control_thread, NULL, NULL);
+	osMutexNew(myMutex);
+	osThreadNew(control_thread, NULL, &thread_attr1);
 	controlQ = osMessageQueueNew(MSG_COUNT, sizeof(uint8_t), NULL);
-	osThreadNew (motor_thread, NULL, NULL);
+	osThreadNew (motor_thread, NULL, &thread_attr2);
 	motorQ = osMessageQueueNew(MSG_COUNT, sizeof(uint8_t), NULL);
-	osThreadNew(tRunningGreenLed, NULL, NULL);    // Create application main thread
-  osThreadNew( tStationeryGreenLed, NULL, NULL);    // Create application main thread
-	osThreadNew(tRunningRedLed, NULL, NULL);    // Create application main thread
-	osThreadNew(tStationeryRedLed, NULL, NULL);    // Create application main thread
+	//osThreadNew(tRunningGreenLed, NULL, NULL);    // Create application main thread
+  //osThreadNew( tStationeryGreenLed, NULL, NULL);    // Create application main thread
+	//osThreadNew(tRunningRedLed, NULL, NULL);    // Create application main thread
+	//osThreadNew(tStationeryRedLed, NULL, NULL);    // Create application main thread
+	osThreadNew(redled,NULL,NULL);
+	osThreadNew(greenled,NULL,NULL);
 	osKernelStart();                      // Start thread execution
 	
 	
   for (;;) {}
 	
 	}
-
