@@ -22,6 +22,9 @@
 #define STOP_MASK 0x0B
 #define RT_MASK 0x09
 #define LT_MASK 0x07
+#define SL_MASK 0x08
+#define SR_MASK 0x0A
+#define END_MASK 0x0C
 //The 8 segment red LED
 #define PTC9_Pin 9
 #define red_led_segment PTC9_Pin
