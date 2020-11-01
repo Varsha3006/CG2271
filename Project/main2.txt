@@ -271,21 +271,21 @@ void redled (void *argument) {
 			osMutexAcquire(myMutex,osWaitForever);
 			turnOnRed();
 			osMutexRelease(myMutex);
-		osDelay(500);
+			osDelay(500);
 			osMutexAcquire(myMutex,osWaitForever);
-		turnOffRed();
+			turnOffRed();
 			osMutexRelease(myMutex);
-		osDelay(500);
+			osDelay(500);
 		}
 		else {
 			osMutexAcquire(myMutex,osWaitForever);
 			turnOnRed();
 			osMutexRelease(myMutex);
-		osDelay(250);
+			osDelay(250);
 			osMutexAcquire(myMutex,osWaitForever);
-		turnOffRed();
+			turnOffRed();
 			osMutexRelease(myMutex);
-		osDelay(250);
+			osDelay(250);
 		}
 	}
 }
@@ -325,8 +325,7 @@ void stopMotors(){
 	TPM2_C0V = 0; // stop right fw
 	TPM2_C1V = 0; // stop right bk
 	
-	//tStationeryRedLed();
-	//tStationeryGreenLed();
+	movingStatus = 0;
 }
 
 /** Move Forward **/
@@ -339,8 +338,6 @@ void forward() {
 	TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9);
 	movingStatus = 1;
 	osMutexRelease(myMutex);
- // tRunningGreenLed();
-	//tRunningRedLed();
 }
 
 /** Move Reverse **/
@@ -356,6 +353,7 @@ void reverse() {
 	//tRunningRedLed();
 }
 
+/** Turn left **/
 void turnLeft() {
 	osMutexAcquire(myMutex,osWaitForever);
 	TPM1->MOD = 7500;
@@ -368,6 +366,7 @@ void turnLeft() {
 	//tRunningRedLed();
 }
 
+/** Turn right **/
 void turnRight() {
 	osMutexAcquire(myMutex,osWaitForever);
 	TPM1->MOD = 7500;
@@ -378,23 +377,48 @@ void turnRight() {
 	osMutexRelease(myMutex);
 }
 
+/** Swing Left **/
+void swingLeft() {
+	osMutexAcquire(myMutex,osWaitForever);
+	TPM1->MOD = 7500;
+	 TPM1_C0V = MAX_DUTY_CYCLE/(speed*0.5); //Left forward, slow
+	 TPM2->MOD = 7500;
+	 TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9); //Right forward
+	movingStatus = 1;
+	osMutexRelease(myMutex);
+}
+
+
+/** Swing Right **/
+void swingRight() {
+	osMutexAcquire(myMutex,osWaitForever);
+	TPM1->MOD = 7500;
+	 TPM1_C0V = MAX_DUTY_CYCLE/speed; //Left forward
+	 TPM2->MOD = 7500;
+	 TPM2_C0V = MAX_DUTY_CYCLE/(speed*0.9*0.5); //Right forward, slow
+	movingStatus = 1;
+	osMutexRelease(myMutex);
+}
 
 void motor_thread (void *argument) {
 	uint8_t myRxData;
 	for(;;) {
-	osMessageQueueGet(motorQ, &myRxData, NULL, osWaitForever);
-   	if(myRxData == FW_MASK){ //0x03
+		osMessageQueueGet(motorQ, &myRxData, NULL, osWaitForever);
+   		if(myRxData == FW_MASK){ //0x03
 			forward();
 		}else if(myRxData == RV_MASK){ //0x05
 			reverse();
-		}else if(myRxData == RT_MASK){ //0x07
+		}else if(myRxData == RT_MASK){ //0x09
 			turnRight();
 		}else if(myRxData == LT_MASK){ //0x07
 			turnLeft();
 		}else if(myRxData == STOP_MASK){ //0x0B
-			stopMotors();
-			
-		}	
+			stopMotors();	
+		}else if(myRxData == SL_MASK) //0x08 {
+			swingLeft();
+		} else if (myRxData == SR_MASK) //0x0A {
+			swingRight();
+		} 
 	}
 }
 
@@ -429,7 +453,7 @@ int main(void) {
 	osThreadNew (motor_thread, NULL, &thread_attr2);
 	motorQ = osMessageQueueNew(MSG_COUNT, sizeof(uint8_t), NULL);
 	//osThreadNew(tRunningGreenLed, NULL, NULL);    // Create application main thread
-  //osThreadNew( tStationeryGreenLed, NULL, NULL);    // Create application main thread
+  	//osThreadNew( tStationeryGreenLed, NULL, NULL);    // Create application main thread
 	//osThreadNew(tRunningRedLed, NULL, NULL);    // Create application main thread
 	//osThreadNew(tStationeryRedLed, NULL, NULL);    // Create application main thread
 	osThreadNew(redled,NULL,NULL);
