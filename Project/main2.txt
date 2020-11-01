@@ -317,6 +317,7 @@ static void delay(volatile uint32_t nof) {
 
 /** Stop the motors**/
 void stopMotors(){
+	osMutexAcquire(myMutex,osWaitForever);
 	TPM1->MOD = 0;
 	TPM1_C0V = 0; // stop left fw
 	TPM1_C1V = 0; // stop left bk
@@ -326,6 +327,7 @@ void stopMotors(){
 	TPM2_C1V = 0; // stop right bk
 	
 	movingStatus = 0;
+	osMutexRelease(myMutex);
 }
 
 /** Move Forward **/
